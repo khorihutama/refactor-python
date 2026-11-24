@@ -16,8 +16,10 @@ tasks = [
     ]
 ]
 
-executor = TaskExecutor(default_actions())
+scheduler = Scheduler(
+    tasks, users, TaskExecutor(default_actions()), clock=datetime.datetime.now
+)
 
 
 def run() -> None:
-    Scheduler(tasks, users, executor, clock=datetime.datetime.now).run_due()
+    scheduler.run_due()

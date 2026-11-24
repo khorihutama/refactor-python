@@ -26,20 +26,28 @@ class Scheduler:
         self._users = users
         self._executor = executor
         self._clock = clock
+        # Task index -> last date it was handled (run or skipped).
+        # shortcut: kept in memory only, so a restart in the same minute runs again; persist it if that matters.
+        self._last_handled: dict[int, datetime.date] = {}
 
     def run_due(self) -> None:
-        now = self._clock().strftime(TIME_FORMAT)
-        for task in self._tasks:
-            if task.time != now:
+        now = self._clock()
+        current_time, today = now.strftime(TIME_FORMAT), now.date()
+        for index, task in enumerate(self._tasks):
+            if task.time != current_time or self._last_handled.get(index) == today:
                 continue
-            if task.user not in self._users:
-                logger.error("Unknown user %s; skipping task.", task.user)
-                continue
-            if not self._executor.supports(task.action):
-                logger.error("Unknown action %s; skipping task.", task.action)
-                continue
-            if not self._users.can_execute(task.user):
-                logger.warning("%s has exceeded quota.", task.user)
-                continue
-            self._executor.execute(task)
-            self._users.record_execution(task.user)
+            self._last_handled[index] = today
+            self._run_one(task)
+
+    def _run_one(self, task: Task) -> None:
+        if task.user not in self._users:
+            logger.error("Unknown user %s; skipping task.", task.user)
+            return
+        if not self._executor.supports(task.action):
+            logger.error("Unknown action %s; skipping task.", task.action)
+            return
+        if not self._users.can_execute(task.user):
+            logger.warning("%s has exceeded quota.", task.user)
+            return
+        self._executor.execute(task)
+        self._users.record_execution(task.user)

@@ -71,11 +71,22 @@ def test_quota_exceeded_skips_task(caplog: pytest.LogCaptureFixture) -> None:
     assert users.get("alice").executed == 1
 
 
-def test_second_run_same_minute_runs_again(caplog: pytest.LogCaptureFixture) -> None:
-    # Current behavior; step 7 (once per day) changes it.
+def test_second_run_same_day_does_nothing(caplog: pytest.LogCaptureFixture) -> None:
     scheduler, users = make(FakeClock(12, 0))
     scheduler.run_due()
     caplog.clear()
+    scheduler.run_due()
+    assert caplog.messages == []
+    assert users.get("alice").executed == 2
+    assert users.get("bob").executed == 1
+
+
+def test_runs_again_next_day(caplog: pytest.LogCaptureFixture) -> None:
+    clock = FakeClock(12, 0)
+    scheduler, users = make(clock)
+    scheduler.run_due()
+    caplog.clear()
+    clock.now += datetime.timedelta(days=1)
     scheduler.run_due()
     assert caplog.messages == [
         "Executing sync on /data/x for alice",
@@ -84,6 +95,13 @@ def test_second_run_same_minute_runs_again(caplog: pytest.LogCaptureFixture) -> 
     ]
     assert users.get("alice").executed == 3
     assert users.get("bob").executed == 2
+
+
+def test_quota_warning_once_per_day(caplog: pytest.LogCaptureFixture) -> None:
+    scheduler, _ = make(FakeClock(12, 0), alice_quota=0)
+    scheduler.run_due()
+    scheduler.run_due()
+    assert caplog.messages.count("alice has exceeded quota.") == 2  # two alice tasks
 
 
 def test_unknown_user_logged_and_skipped(caplog: pytest.LogCaptureFixture) -> None:
