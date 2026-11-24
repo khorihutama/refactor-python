@@ -85,24 +85,31 @@ def test_second_run_same_minute_runs_again(
     assert main.users.get("bob").executed == 2
 
 
-def test_unknown_user_crashes(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Current behavior; step 6 (log and skip) changes it.
-    monkeypatch.setattr(
-        main, "tasks", [dataclasses.replace(main.tasks[0], user="carol")]
-    )
-    set_clock(monkeypatch, 12, 0)
-    with pytest.raises(KeyError):
-        main.run()
-
-
-def test_unknown_action_still_runs(
+def test_unknown_user_logged_and_skipped(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    # Current behavior; step 6 (log and skip) changes it.
-    monkeypatch.setattr(
-        main, "tasks", [dataclasses.replace(main.tasks[0], action="rename")]
-    )
+    bad = dataclasses.replace(main.tasks[0], user="carol")
+    monkeypatch.setattr(main, "tasks", [bad, main.tasks[1]])
     set_clock(monkeypatch, 12, 0)
     main.run()
-    assert caplog.messages == ["Executing rename on /data/x for alice"]
-    assert main.users.get("alice").executed == 1
+    assert caplog.messages == [
+        "Unknown user carol; skipping task.",
+        "Executing backup on /srv/y for bob",
+    ]
+    assert caplog.records[0].levelno == logging.ERROR
+    assert main.users.get("bob").executed == 1
+
+
+def test_unknown_action_logged_and_skipped(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    bad = dataclasses.replace(main.tasks[0], action="rename")
+    monkeypatch.setattr(main, "tasks", [bad, main.tasks[1]])
+    set_clock(monkeypatch, 12, 0)
+    main.run()
+    assert caplog.messages == [
+        "Unknown action rename; skipping task.",
+        "Executing backup on /srv/y for bob",
+    ]
+    assert caplog.records[0].levelno == logging.ERROR
+    assert main.users.get("alice").executed == 0

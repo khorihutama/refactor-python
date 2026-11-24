@@ -32,6 +32,12 @@ class Scheduler:
         for task in self._tasks:
             if task.time != now:
                 continue
+            if task.user not in self._users:
+                logger.error("Unknown user %s; skipping task.", task.user)
+                continue
+            if not self._executor.supports(task.action):
+                logger.error("Unknown action %s; skipping task.", task.action)
+                continue
             if not self._users.can_execute(task.user):
                 logger.warning("%s has exceeded quota.", task.user)
                 continue

@@ -13,6 +13,9 @@ class UserRegistry:
     def __init__(self, users: Iterable[User]) -> None:
         self._users = {user.name: user for user in users}
 
+    def __contains__(self, name: object) -> bool:
+        return name in self._users
+
     def get(self, name: str) -> User:
         return self._users[name]
 

@@ -39,10 +39,8 @@ class TaskExecutor:
     def __init__(self, actions: Mapping[str, ActionStrategy]) -> None:
         self._actions = actions
 
+    def supports(self, action: str) -> bool:
+        return action in self._actions
+
     def execute(self, task: Task) -> None:
-        action = self._actions.get(task.action)
-        if action is None:
-            # shortcut: unknown actions still run like the original; step 6 logs and skips them.
-            simulate(task)
-            return
-        action.execute(task)
+        self._actions[task.action].execute(task)
