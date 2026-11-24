@@ -1,10 +1,13 @@
 import datetime
+import logging
 from collections.abc import Callable, Sequence
 from typing import Final
 
 from scheduler.executor import TaskExecutor
 from scheduler.models import Task
 from scheduler.users import UserRegistry
+
+logger = logging.getLogger(__name__)
 
 TIME_FORMAT: Final = "%H:%M"
 
@@ -30,7 +33,7 @@ class Scheduler:
             if task.time != now:
                 continue
             if not self._users.can_execute(task.user):
-                print(f"{task.user} has exceeded quota.")
+                logger.warning("%s has exceeded quota.", task.user)
                 continue
             self._executor.execute(task)
             self._users.record_execution(task.user)

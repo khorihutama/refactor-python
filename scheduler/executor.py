@@ -1,7 +1,10 @@
+import logging
 from collections.abc import Mapping
 from typing import Protocol
 
 from scheduler.models import Task
+
+logger = logging.getLogger(__name__)
 
 
 class ActionStrategy(Protocol):
@@ -9,7 +12,7 @@ class ActionStrategy(Protocol):
 
 
 def simulate(task: Task) -> None:
-    print(f"Executing {task.action} on {task.target} for {task.user}")
+    logger.info("Executing %s on %s for %s", task.action, task.target, task.user)
 
 
 # Actions are simulated only; a real implementation replaces the body of execute().
