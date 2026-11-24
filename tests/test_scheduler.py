@@ -1,3 +1,4 @@
+import asyncio
 import dataclasses
 import datetime
 import logging
@@ -40,7 +41,7 @@ def capture_info_logs(caplog: pytest.LogCaptureFixture) -> None:
 
 def test_runs_all_due_tasks(caplog: pytest.LogCaptureFixture) -> None:
     scheduler, users = make(FakeClock(12, 0))
-    scheduler.run_due()
+    asyncio.run(scheduler.run_due())
     assert caplog.messages == [
         "Executing sync on /data/x for alice",
         "Executing backup on /srv/y for bob",
@@ -54,14 +55,14 @@ def test_nothing_runs_outside_scheduled_minute(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     scheduler, users = make(FakeClock(12, 1))
-    scheduler.run_due()
+    asyncio.run(scheduler.run_due())
     assert caplog.messages == []
     assert users.get("alice").executed == 0
 
 
 def test_quota_exceeded_skips_task(caplog: pytest.LogCaptureFixture) -> None:
     scheduler, users = make(FakeClock(12, 0), alice_quota=1)
-    scheduler.run_due()
+    asyncio.run(scheduler.run_due())
     assert caplog.messages == [
         "Executing sync on /data/x for alice",
         "Executing backup on /srv/y for bob",
@@ -73,9 +74,9 @@ def test_quota_exceeded_skips_task(caplog: pytest.LogCaptureFixture) -> None:
 
 def test_second_run_same_day_does_nothing(caplog: pytest.LogCaptureFixture) -> None:
     scheduler, users = make(FakeClock(12, 0))
-    scheduler.run_due()
+    asyncio.run(scheduler.run_due())
     caplog.clear()
-    scheduler.run_due()
+    asyncio.run(scheduler.run_due())
     assert caplog.messages == []
     assert users.get("alice").executed == 2
     assert users.get("bob").executed == 1
@@ -84,10 +85,10 @@ def test_second_run_same_day_does_nothing(caplog: pytest.LogCaptureFixture) -> N
 def test_runs_again_next_day(caplog: pytest.LogCaptureFixture) -> None:
     clock = FakeClock(12, 0)
     scheduler, users = make(clock)
-    scheduler.run_due()
+    asyncio.run(scheduler.run_due())
     caplog.clear()
     clock.now += datetime.timedelta(days=1)
-    scheduler.run_due()
+    asyncio.run(scheduler.run_due())
     assert caplog.messages == [
         "Executing sync on /data/x for alice",
         "Executing backup on /srv/y for bob",
@@ -99,15 +100,15 @@ def test_runs_again_next_day(caplog: pytest.LogCaptureFixture) -> None:
 
 def test_quota_warning_once_per_day(caplog: pytest.LogCaptureFixture) -> None:
     scheduler, _ = make(FakeClock(12, 0), alice_quota=0)
-    scheduler.run_due()
-    scheduler.run_due()
+    asyncio.run(scheduler.run_due())
+    asyncio.run(scheduler.run_due())
     assert caplog.messages.count("alice has exceeded quota.") == 2  # two alice tasks
 
 
 def test_unknown_user_logged_and_skipped(caplog: pytest.LogCaptureFixture) -> None:
     bad = dataclasses.replace(TASKS[0], user="carol")
     scheduler, users = make(FakeClock(12, 0), tasks=[bad, TASKS[1]])
-    scheduler.run_due()
+    asyncio.run(scheduler.run_due())
     assert caplog.messages == [
         "Unknown user carol; skipping task.",
         "Executing backup on /srv/y for bob",
@@ -119,7 +120,7 @@ def test_unknown_user_logged_and_skipped(caplog: pytest.LogCaptureFixture) -> No
 def test_unknown_action_logged_and_skipped(caplog: pytest.LogCaptureFixture) -> None:
     bad = dataclasses.replace(TASKS[0], action="rename")
     scheduler, users = make(FakeClock(12, 0), tasks=[bad, TASKS[1]])
-    scheduler.run_due()
+    asyncio.run(scheduler.run_due())
     assert caplog.messages == [
         "Unknown action rename; skipping task.",
         "Executing backup on /srv/y for bob",
@@ -134,12 +135,56 @@ def test_run_forever_checks_every_poll_interval(
     scheduler, users = make(FakeClock(12, 0))
     sleeps: list[float] = []
 
-    def fake_sleep(seconds: float) -> None:
+    class Stop(Exception):
+        pass
+
+    async def fake_sleep(seconds: float) -> None:
         sleeps.append(seconds)
         if len(sleeps) == 2:
-            raise KeyboardInterrupt
+            raise Stop
 
-    with pytest.raises(KeyboardInterrupt):
-        scheduler.run_forever(sleep=fake_sleep)
+    with pytest.raises(Stop):
+        asyncio.run(scheduler.run_forever(sleep=fake_sleep))
     assert sleeps == [POLL_SECONDS, POLL_SECONDS]
     assert users.get("alice").executed == 2  # second check same minute: no rerun
+
+
+class YieldingAction:
+    """Gives control back to the event loop, like real I/O would."""
+
+    def __init__(self) -> None:
+        self.ran: list[str] = []
+
+    async def execute(self, task: Task) -> None:
+        await asyncio.sleep(0)
+        self.ran.append(task.target)
+
+
+def test_concurrent_tasks_cannot_overspend_quota(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    action = YieldingAction()
+    users = UserRegistry([User("alice", 1)])
+    tasks = [Task("alice", "12:00", "sync", "/a"), Task("alice", "12:00", "sync", "/b")]
+    executor = TaskExecutor({"sync": action})
+    asyncio.run(Scheduler(tasks, users, executor, FakeClock(12, 0)).run_due())
+    assert action.ran == ["/a"]
+    assert users.get("alice").executed == 1
+    assert "alice has exceeded quota." in caplog.messages
+
+
+class FailingAction:
+    async def execute(self, task: Task) -> None:
+        raise RuntimeError("disk full")
+
+
+def test_failing_task_is_logged_and_others_still_run(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    actions = {**default_actions(), "sync": FailingAction()}
+    users = UserRegistry([User("alice", 3), User("bob", 5)])
+    scheduler = Scheduler(TASKS, users, TaskExecutor(actions), FakeClock(12, 0))
+    asyncio.run(scheduler.run_due())
+    assert "Task sync on /data/x for alice failed." in caplog.messages
+    assert "Executing backup on /srv/y for bob" in caplog.messages
+    assert "Executing delete on /tmp/z for alice" in caplog.messages

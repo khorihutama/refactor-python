@@ -1,7 +1,7 @@
+import asyncio
 import datetime
 import logging
-import time
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Final
 
 from scheduler.executor import TaskExecutor
@@ -14,6 +14,7 @@ POLL_SECONDS: Final = 30
 
 
 Clock = Callable[[], datetime.datetime]
+Sleep = Callable[[float], Awaitable[None]]
 
 
 class Scheduler:
@@ -32,23 +33,41 @@ class Scheduler:
         # shortcut: kept in memory only, so a restart in the same minute runs again; persist it if that matters.
         self._last_handled: dict[int, datetime.date] = {}
 
-    def run_due(self) -> None:
+    async def run_due(self) -> None:
+        """Run every task due this minute concurrently; a failing task is logged."""
+        due = self._take_due()
+        results = await asyncio.gather(
+            *(self._run_one(task) for task in due), return_exceptions=True
+        )
+        for task, result in zip(due, results, strict=True):
+            if isinstance(result, Exception):
+                logger.error(
+                    "Task %s on %s for %s failed.",
+                    task.action,
+                    task.target,
+                    task.user,
+                    exc_info=result,
+                )
+
+    async def run_forever(self, sleep: Sleep = asyncio.sleep) -> None:
+        """Check for due tasks every POLL_SECONDS until interrupted (Ctrl+C)."""
+        logger.info("Scheduler started; checking every %s seconds.", POLL_SECONDS)
+        while True:
+            await self.run_due()
+            await sleep(POLL_SECONDS)
+
+    def _take_due(self) -> list[Task]:
         now = self._clock()
         current_time, today = now.strftime(TIME_FORMAT), now.date()
+        due = []
         for index, task in enumerate(self._tasks):
             if task.time != current_time or self._last_handled.get(index) == today:
                 continue
             self._last_handled[index] = today
-            self._run_one(task)
+            due.append(task)
+        return due
 
-    def run_forever(self, sleep: Callable[[float], None] = time.sleep) -> None:
-        """Check for due tasks every POLL_SECONDS until interrupted (Ctrl+C)."""
-        logger.info("Scheduler started; checking every %s seconds.", POLL_SECONDS)
-        while True:
-            self.run_due()
-            sleep(POLL_SECONDS)
-
-    def _run_one(self, task: Task) -> None:
+    async def _run_one(self, task: Task) -> None:
         if task.user not in self._users:
             logger.error("Unknown user %s; skipping task.", task.user)
             return
@@ -58,5 +77,7 @@ class Scheduler:
         if not self._users.can_execute(task.user):
             logger.warning("%s has exceeded quota.", task.user)
             return
-        self._executor.execute(task)
+        # Reserve quota before the first await, so concurrent tasks of one user
+        # cannot all pass the check. A failed action still uses its quota.
         self._users.record_execution(task.user)
+        await self._executor.execute(task)

@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 
 class ActionStrategy(Protocol):
-    def execute(self, task: Task) -> None: ...
+    async def execute(self, task: Task) -> None: ...
 
 
 def simulate(task: Task) -> None:
@@ -17,17 +17,17 @@ def simulate(task: Task) -> None:
 
 # Actions are simulated only; a real implementation replaces the body of execute().
 class SyncAction:
-    def execute(self, task: Task) -> None:
+    async def execute(self, task: Task) -> None:
         simulate(task)
 
 
 class BackupAction:
-    def execute(self, task: Task) -> None:
+    async def execute(self, task: Task) -> None:
         simulate(task)
 
 
 class DeleteAction:
-    def execute(self, task: Task) -> None:
+    async def execute(self, task: Task) -> None:
         simulate(task)
 
 
@@ -42,5 +42,5 @@ class TaskExecutor:
     def supports(self, action: str) -> bool:
         return action in self._actions
 
-    def execute(self, task: Task) -> None:
-        self._actions[task.action].execute(task)
+    async def execute(self, task: Task) -> None:
+        await self._actions[task.action].execute(task)

@@ -75,7 +75,7 @@ def test_main_returns_1_on_invalid_json(
 def test_main_stops_cleanly_on_ctrl_c(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    def interrupted(self: Scheduler) -> None:
+    async def interrupted(self: Scheduler) -> None:
         raise KeyboardInterrupt
 
     caplog.set_level(logging.INFO)

@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import datetime
 import logging
 from collections.abc import Sequence
@@ -32,7 +33,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         logger.error("Cannot load config %s: %s", args.config, error)
         return 1
     try:
-        scheduler.run_forever()
+        asyncio.run(scheduler.run_forever())
     except KeyboardInterrupt:
         logger.info("Scheduler stopped.")
     return 0
