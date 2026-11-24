@@ -7,7 +7,7 @@ import pytest
 
 from scheduler.executor import TaskExecutor, default_actions
 from scheduler.models import Task
-from scheduler.scheduler import Scheduler
+from scheduler.scheduler import POLL_SECONDS, Scheduler
 from scheduler.users import User, UserRegistry
 
 TASKS = [
@@ -126,3 +126,20 @@ def test_unknown_action_logged_and_skipped(caplog: pytest.LogCaptureFixture) -> 
     ]
     assert caplog.records[0].levelno == logging.ERROR
     assert users.get("alice").executed == 0
+
+
+def test_run_forever_checks_every_poll_interval(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    scheduler, users = make(FakeClock(12, 0))
+    sleeps: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        if len(sleeps) == 2:
+            raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        scheduler.run_forever(sleep=fake_sleep)
+    assert sleeps == [POLL_SECONDS, POLL_SECONDS]
+    assert users.get("alice").executed == 2  # second check same minute: no rerun

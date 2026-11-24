@@ -22,7 +22,7 @@ def build_scheduler(config_path: Path) -> Scheduler:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run the tasks due now.")
+    parser = argparse.ArgumentParser(description="Run scheduled tasks until Ctrl+C.")
     parser.add_argument("config", nargs="?", type=Path, default=DEFAULT_CONFIG)
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format=LOG_FORMAT)
@@ -31,7 +31,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (OSError, ValueError) as error:
         logger.error("Cannot load config %s: %s", args.config, error)
         return 1
-    scheduler.run_due()
+    try:
+        scheduler.run_forever()
+    except KeyboardInterrupt:
+        logger.info("Scheduler stopped.")
     return 0
 
 
