@@ -4,6 +4,10 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = []
 
+[tool.ruff.lint]
+# Bad config content is always ValueError, so the CLI catches one error type.
+ignore = ["TRY004"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 

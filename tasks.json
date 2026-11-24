@@ -1,0 +1,11 @@
+{
+  "users": {
+    "alice": {"quota": 3},
+    "bob": {"quota": 5}
+  },
+  "tasks": [
+    {"user": "alice", "time": "12:00", "action": "sync", "target": "/data/x"},
+    {"user": "bob", "time": "12:00", "action": "backup", "target": "/srv/y"},
+    {"user": "alice", "time": "12:00", "action": "delete", "target": "/tmp/z"}
+  ]
+}

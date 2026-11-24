@@ -1,15 +1,13 @@
 import datetime
 import logging
 from collections.abc import Callable, Sequence
-from typing import Final
 
 from scheduler.executor import TaskExecutor
-from scheduler.models import Task
+from scheduler.models import TIME_FORMAT, Task
 from scheduler.users import UserRegistry
 
 logger = logging.getLogger(__name__)
 
-TIME_FORMAT: Final = "%H:%M"
 
 Clock = Callable[[], datetime.datetime]
 
