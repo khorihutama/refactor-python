@@ -86,3 +86,16 @@ def test_unknown_user_crashes(monkeypatch: pytest.MonkeyPatch) -> None:
     set_clock(monkeypatch, 12, 0)
     with pytest.raises(KeyError):
         main.run()
+
+
+def test_unknown_action_still_runs(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Current behavior; step 6 (log and skip) changes it.
+    monkeypatch.setattr(
+        main, "tasks", [dataclasses.replace(main.tasks[0], action="rename")]
+    )
+    set_clock(monkeypatch, 12, 0)
+    main.run()
+    assert capsys.readouterr().out == "Executing rename on /data/x for alice\n"
+    assert main.users.get("alice").executed == 1

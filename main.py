@@ -1,6 +1,7 @@
 import datetime
 from typing import Final
 
+from scheduler.executor import TaskExecutor, default_actions
 from scheduler.models import Task
 from scheduler.users import User, UserRegistry
 
@@ -17,6 +18,8 @@ tasks = [
     ]
 ]
 
+executor = TaskExecutor(default_actions())
+
 
 def run() -> None:
     now = datetime.datetime.now().strftime(TIME_FORMAT)
@@ -26,5 +29,5 @@ def run() -> None:
         if not users.can_execute(task.user):
             print(f"{task.user} has exceeded quota.")
             continue
-        print(f"Executing {task.action} on {task.target} for {task.user}")
+        executor.execute(task)
         users.record_execution(task.user)
